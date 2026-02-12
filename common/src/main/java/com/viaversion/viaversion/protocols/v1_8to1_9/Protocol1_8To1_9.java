@@ -37,6 +37,7 @@ import com.viaversion.viaversion.protocols.v1_8to1_9.provider.EntityIdProvider;
 import com.viaversion.viaversion.protocols.v1_8to1_9.provider.HandItemProvider;
 import com.viaversion.viaversion.protocols.v1_8to1_9.provider.MainHandProvider;
 import com.viaversion.viaversion.protocols.v1_8to1_9.provider.MovementTransmitterProvider;
+import com.viaversion.viaversion.protocols.v1_8to1_9.provider.SwapHandProvider;
 import com.viaversion.viaversion.protocols.v1_8to1_9.rewriter.EntityPacketRewriter1_9;
 import com.viaversion.viaversion.protocols.v1_8to1_9.rewriter.ItemPacketRewriter1_9;
 import com.viaversion.viaversion.protocols.v1_8to1_9.rewriter.PlayerPacketRewriter1_9;
@@ -97,6 +98,7 @@ public class Protocol1_8To1_9 extends AbstractProtocol<ClientboundPackets1_8, Cl
         providers.register(EntityIdProvider.class, new EntityIdProvider());
         providers.register(BossBarProvider.class, new BossBarProvider());
         providers.register(MainHandProvider.class, new MainHandProvider());
+        providers.register(SwapHandProvider.class, new SwapHandProvider());
         providers.register(CompressionProvider.class, new CompressionProvider());
         providers.register(MovementTransmitterProvider.class, new MovementTransmitterProvider());
     }

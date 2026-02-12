@@ -38,7 +38,9 @@ import com.viaversion.viaversion.bukkit.listeners.v1_8to1_9.PaperPatch;
 import com.viaversion.viaversion.bukkit.providers.BukkitAckSequenceProvider;
 import com.viaversion.viaversion.bukkit.providers.BukkitBlockConnectionProvider;
 import com.viaversion.viaversion.bukkit.providers.BukkitInventoryQuickMoveProvider;
+import com.viaversion.viaversion.bukkit.providers.BukkitOffHandItemProvider;
 import com.viaversion.viaversion.bukkit.providers.BukkitPickItemProvider;
+import com.viaversion.viaversion.bukkit.providers.BukkitSwapHandProvider;
 import com.viaversion.viaversion.bukkit.providers.BukkitViaMovementTransmitter;
 import com.viaversion.viaversion.protocols.v1_11_1to1_12.provider.InventoryQuickMoveProvider;
 import com.viaversion.viaversion.protocols.v1_12_2to1_13.blockconnections.ConnectionData;
@@ -52,6 +54,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
+import com.viaversion.viaversion.protocols.v1_8to1_9.provider.OffHandItemProvider;
+import com.viaversion.viaversion.protocols.v1_8to1_9.provider.SwapHandProvider;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -98,6 +102,7 @@ public class BukkitViaLoader implements ViaPlatformLoader {
                 handItemCache = new HandItemCache();
                 tasks.add(handItemCache.runTaskTimerAsynchronously(plugin, 1L, 1L)); // Updates player's items :)
             }
+
         }
 
         if (serverProtocolVersion.olderThan(ProtocolVersion.v1_14)) {
@@ -164,6 +169,10 @@ public class BukkitViaLoader implements ViaPlatformLoader {
                     }
                 }
             });
+
+            Via.getManager().getProviders().use(SwapHandProvider.class, new BukkitSwapHandProvider());
+            Via.getManager().getProviders().use(OffHandItemProvider.class, new BukkitOffHandItemProvider());
+            BukkitOffHandItemProvider.register(this.plugin);
         }
 
         if (serverProtocolVersion.olderThan(ProtocolVersion.v1_12)) {

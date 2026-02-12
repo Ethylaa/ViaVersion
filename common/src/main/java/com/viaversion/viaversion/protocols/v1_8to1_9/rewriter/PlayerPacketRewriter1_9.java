@@ -309,6 +309,7 @@ public class PlayerPacketRewriter1_9 {
             }
         });
 
+
         protocol.registerClientbound(ClientboundPackets1_8.GAME_EVENT, new PacketHandlers() {
             @Override
             public void register() {

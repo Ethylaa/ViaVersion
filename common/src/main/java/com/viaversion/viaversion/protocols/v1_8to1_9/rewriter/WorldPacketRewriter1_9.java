@@ -45,6 +45,8 @@ import com.viaversion.viaversion.protocols.v1_8to1_9.packet.ServerboundPackets1_
 import com.viaversion.viaversion.protocols.v1_8to1_9.packet.ServerboundPackets1_9;
 import com.viaversion.viaversion.protocols.v1_8to1_9.provider.CommandBlockProvider;
 import com.viaversion.viaversion.protocols.v1_8to1_9.provider.HandItemProvider;
+import com.viaversion.viaversion.protocols.v1_8to1_9.provider.OffHandItemProvider;
+import com.viaversion.viaversion.protocols.v1_8to1_9.provider.SwapHandProvider;
 import com.viaversion.viaversion.protocols.v1_8to1_9.storage.ClientWorld1_9;
 import com.viaversion.viaversion.protocols.v1_8to1_9.storage.EntityTracker1_9;
 import com.viaversion.viaversion.util.ComponentUtil;
@@ -60,7 +62,7 @@ public class WorldPacketRewriter1_9 {
                 map(Types.BLOCK_POSITION1_8); // 0 - Sign Position
                 handler(wrapper -> {
                     for (int i = 0; i < 4; i++) {
-                        final String line = wrapper.read(Types.STRING); // Should be Type.COMPONENT but would break in some cases
+                        final String line = wrapper.read(Types.STRING);
                         Protocol1_8To1_9.STRING_TO_JSON.write(wrapper, line);
                     }
                 });
@@ -77,11 +79,9 @@ public class WorldPacketRewriter1_9 {
 
                 handler(wrapper -> {
                     int id = wrapper.get(Types.INT, 0);
-
                     id = EffectIdMappings1_9.getNewId(id);
                     wrapper.set(Types.INT, 0, id);
                 });
-                // Rewrite potion effect as it changed to use a dynamic registry
                 handler(wrapper -> {
                     int id = wrapper.get(Types.INT, 0);
                     if (id == 2002) {
@@ -97,8 +97,6 @@ public class WorldPacketRewriter1_9 {
             @Override
             public void register() {
                 map(Types.STRING); // 0 - Sound Name
-                // 1 - Sound Category ID
-                // Everything else gets written through
 
                 handler(wrapper -> {
                     String name = Key.stripMinecraftNamespace(wrapper.get(Types.STRING, 0));
@@ -111,16 +109,16 @@ public class WorldPacketRewriter1_9 {
                         newname = effect.getNewName();
                     }
                     wrapper.set(Types.STRING, 0, newname);
-                    wrapper.write(Types.VAR_INT, catid); // Write Category ID
+                    wrapper.write(Types.VAR_INT, catid);
 
                     if (!Via.getConfig().cancelBlockSounds()) {
                         return;
                     }
                     if (effect != null && effect.isBreakSound()) {
                         EntityTracker1_9 tracker = wrapper.user().getEntityTracker(Protocol1_8To1_9.class);
-                        int x = wrapper.passthrough(Types.INT); //Position X
-                        int y = wrapper.passthrough(Types.INT); //Position Y
-                        int z = wrapper.passthrough(Types.INT); //Position Z
+                        int x = wrapper.passthrough(Types.INT);
+                        int y = wrapper.passthrough(Types.INT);
+                        int z = wrapper.passthrough(Types.INT);
                         if (tracker.interactedBlockRecently((int) Math.floor(x / 8.0), (int) Math.floor(y / 8.0), (int) Math.floor(z / 8.0))) {
                             wrapper.cancel();
                         }
@@ -132,29 +130,21 @@ public class WorldPacketRewriter1_9 {
         protocol.registerClientbound(ClientboundPackets1_8.LEVEL_CHUNK, wrapper -> {
             ClientWorld1_9 clientWorld = wrapper.user().getClientWorld(Protocol1_8To1_9.class);
             Chunk chunk = wrapper.read(ChunkType1_8.forEnvironment(clientWorld.getEnvironment()));
-
             long chunkHash = ChunkPosition.chunkKey(chunk.getX(), chunk.getZ());
 
-            // Check if the chunk should be handled as an unload packet
             if (chunk.isFullChunk() && chunk.getBitmask() == 0) {
                 wrapper.setPacketType(ClientboundPackets1_9.FORGET_LEVEL_CHUNK);
                 wrapper.write(Types.INT, chunk.getX());
                 wrapper.write(Types.INT, chunk.getZ());
 
-                // Remove commandBlocks on chunk unload
                 CommandBlockProvider provider = Via.getManager().getProviders().get(CommandBlockProvider.class);
                 provider.unloadChunk(wrapper.user(), chunk.getX(), chunk.getZ());
-
                 clientWorld.getLoadedChunks().remove(chunkHash);
 
-                // Unload the empty chunks
                 if (Via.getConfig().isChunkBorderFix()) {
                     for (int modX = -1; modX <= 1; modX++) {
                         for (int modZ = -1; modZ <= 1; modZ++) {
-                            if (modX == 0 && modZ == 0) {
-                                continue; // Skip the center chunk
-                            }
-
+                            if (modX == 0 && modZ == 0) continue;
                             int chunkX = chunk.getX() + modX;
                             int chunkZ = chunk.getZ() + modZ;
                             if (!clientWorld.getLoadedChunks().contains(ChunkPosition.chunkKey(chunkX, chunkZ))) {
@@ -169,17 +159,12 @@ public class WorldPacketRewriter1_9 {
             } else {
                 Type<Chunk> chunkType = ChunkType1_9_1.forEnvironment(clientWorld.getEnvironment());
                 wrapper.write(chunkType, chunk);
-
                 clientWorld.getLoadedChunks().add(chunkHash);
 
-                // Send empty chunks surrounding the loaded chunk to force 1.9+ clients to render the new chunk
                 if (Via.getConfig().isChunkBorderFix()) {
                     for (int modX = -1; modX <= 1; modX++) {
                         for (int modZ = -1; modZ <= 1; modZ++) {
-                            if (modX == 0 && modZ == 0) {
-                                continue; // Skip the center chunk
-                            }
-
+                            if (modX == 0 && modZ == 0) continue;
                             int chunkX = chunk.getX() + modX;
                             int chunkZ = chunk.getZ() + modZ;
                             if (!clientWorld.getLoadedChunks().contains(ChunkPosition.chunkKey(chunkX, chunkZ))) {
@@ -195,33 +180,24 @@ public class WorldPacketRewriter1_9 {
         });
 
         protocol.registerClientbound(ClientboundPackets1_8.MAP_BULK_CHUNK, null, wrapper -> {
-            wrapper.cancel(); // Cancel the packet from being sent
+            wrapper.cancel();
             ClientWorld1_9 clientWorld = wrapper.user().getClientWorld(Protocol1_8To1_9.class);
             Chunk[] chunks = wrapper.read(BulkChunkType1_8.TYPE);
-
             Type<Chunk> chunkType = ChunkType1_9_1.forEnvironment(clientWorld.getEnvironment());
-            // Split into multiple chunk packets
+
             for (Chunk chunk : chunks) {
                 PacketWrapper chunkData = wrapper.create(ClientboundPackets1_9.LEVEL_CHUNK);
                 chunkData.write(chunkType, chunk);
                 chunkData.send(Protocol1_8To1_9.class);
-
                 clientWorld.getLoadedChunks().add(ChunkPosition.chunkKey(chunk.getX(), chunk.getZ()));
             }
 
-            if (!Via.getConfig().isChunkBorderFix()) {
-                return;
-            }
+            if (!Via.getConfig().isChunkBorderFix()) return;
 
-            // Send empty chunks surrounding the loaded chunk to force 1.9+ clients to render the new chunk
-            // We do this after the bulk to prevent packet spam, as the bulk might already send surrounding chunks
             for (Chunk chunk : chunks) {
                 for (int modX = -1; modX <= 1; modX++) {
                     for (int modZ = -1; modZ <= 1; modZ++) {
-                        if (modX == 0 && modZ == 0) {
-                            continue; // Skip the center chunk
-                        }
-
+                        if (modX == 0 && modZ == 0) continue;
                         int chunkX = chunk.getX() + modX;
                         int chunkZ = chunk.getZ() + modZ;
                         if (!clientWorld.getLoadedChunks().contains(ChunkPosition.chunkKey(chunkX, chunkZ))) {
@@ -240,42 +216,39 @@ public class WorldPacketRewriter1_9 {
             public void register() {
                 map(Types.BLOCK_POSITION1_8); // 0 - Block Position
                 map(Types.UNSIGNED_BYTE); // 1 - Action
-                map(Types.NAMED_COMPOUND_TAG); // 2 - NBT (Might not be present)
+                map(Types.NAMED_COMPOUND_TAG); // 2 - NBT
+
                 handler(wrapper -> {
                     int action = wrapper.get(Types.UNSIGNED_BYTE, 0);
-                    if (action == 1) { // Update Spawner
+                    if (action == 1) {
                         CompoundTag tag = wrapper.get(Types.NAMED_COMPOUND_TAG, 0);
                         if (tag != null) {
                             StringTag entityId = tag.getStringTag("EntityId");
                             if (entityId != null) {
-                                String entity = entityId.getValue();
                                 CompoundTag spawn = new CompoundTag();
-                                spawn.putString("id", entity);
+                                spawn.putString("id", entityId.getValue());
                                 tag.put("SpawnData", spawn);
-                            } else { // EntityID does not exist
+                            } else {
                                 CompoundTag spawn = new CompoundTag();
-                                spawn.putString("id", "AreaEffectCloud"); //Make spawners show up as empty when no EntityId is given.
+                                spawn.putString("id", "AreaEffectCloud");
                                 tag.put("SpawnData", spawn);
                             }
                         }
                     }
-                    if (action == 2) { // Update Command Block
+                    if (action == 2) {
                         CommandBlockProvider provider = Via.getManager().getProviders().get(CommandBlockProvider.class);
                         provider.addOrUpdateBlock(wrapper.user(), wrapper.get(Types.BLOCK_POSITION1_8, 0), wrapper.get(Types.NAMED_COMPOUND_TAG, 0));
-
-                        // To prevent window issues don't send updates
                         wrapper.cancel();
                     }
                 });
             }
         });
 
-
         /* Incoming Packets */
         protocol.registerServerbound(ServerboundPackets1_9.SIGN_UPDATE, new PacketHandlers() {
             @Override
             public void register() {
-                map(Types.BLOCK_POSITION1_8); // 0 - Sign Position
+                map(Types.BLOCK_POSITION1_8);
                 handler(wrapper -> {
                     for (int i = 0; i < 4; i++) {
                         final String line = wrapper.read(Types.STRING);
@@ -292,10 +265,13 @@ public class WorldPacketRewriter1_9 {
                 map(Types.BLOCK_POSITION1_8); // Position
                 handler(wrapper -> {
                     int status = wrapper.get(Types.VAR_INT, 0);
-                    if (status == 6)
+                    if (status == 6) {
                         wrapper.cancel();
+                        Via.getManager().getProviders()
+                            .get(SwapHandProvider.class)
+                            .onSwapHand(wrapper.user());
+                    }
                 });
-                // Blocking
                 handler(wrapper -> {
                     int status = wrapper.get(Types.VAR_INT, 0);
                     if (status == 5 || status == 4 || status == 3) {
@@ -313,55 +289,53 @@ public class WorldPacketRewriter1_9 {
 
         protocol.registerServerbound(ServerboundPackets1_9.USE_ITEM, null, wrapper -> {
             int hand = wrapper.read(Types.VAR_INT);
-            // Wipe the input buffer
             wrapper.clearInputBuffer();
             wrapper.setPacketType(ServerboundPackets1_8.USE_ITEM_ON);
             wrapper.write(Types.BLOCK_POSITION1_8, new BlockPosition(-1, -1, -1));
             wrapper.write(Types.UNSIGNED_BYTE, (short) 255);
-            // Write item in hand
-            Item item = Via.getManager().getProviders().get(HandItemProvider.class).getHandItem(wrapper.user());
-            // Blocking patch for 1.9-1.21.3 clients
-            if (Via.getConfig().isShieldBlocking() &&
-                wrapper.user().getProtocolInfo().protocolVersion().olderThan(ProtocolVersion.v1_21_4)) {
-                EntityTracker1_9 tracker = wrapper.user().getEntityTracker(Protocol1_8To1_9.class);
 
-                // Check if the shield is already there or if we have to give it here
-                boolean showShieldWhenSwordInHand = Via.getConfig().isShowShieldWhenSwordInHand();
+            Item item;
+            if (hand == 1) {
+                // Off-hand : swap temporaire + item off-hand
+                OffHandItemProvider offHandProvider = Via.getManager().getProviders().get(OffHandItemProvider.class);
+                item = offHandProvider.getOffHandItem(wrapper.user());
+                if (item == null) {
+                    wrapper.cancel();
+                    return;
+                }
+                Via.getPlatform().runSync(() -> offHandProvider.prePlacement(wrapper.user()));
+                Via.getPlatform().runSync(() -> offHandProvider.postPlacement(wrapper.user()));
+            } else {
+                item = Via.getManager().getProviders().get(HandItemProvider.class).getHandItem(wrapper.user());
 
-                // Method to identify the sword in hand
-                boolean isSword = showShieldWhenSwordInHand ? tracker.hasSwordInHand()
-                    : item != null && Protocol1_8To1_9.isSword(item.identifier());
+                if (Via.getConfig().isShieldBlocking() &&
+                    wrapper.user().getProtocolInfo().protocolVersion().olderThan(ProtocolVersion.v1_21_4)) {
+                    EntityTracker1_9 tracker = wrapper.user().getEntityTracker(Protocol1_8To1_9.class);
+                    boolean showShieldWhenSwordInHand = Via.getConfig().isShowShieldWhenSwordInHand();
+                    boolean isSword = showShieldWhenSwordInHand ? tracker.hasSwordInHand()
+                        : item != null && Protocol1_8To1_9.isSword(item.identifier());
 
-                if (isSword) {
-                    if (hand == 0 && !tracker.isBlocking()) {
-                        tracker.setBlocking(true);
-
-                        // Check if the shield is already in the offhand
-                        if (!showShieldWhenSwordInHand && tracker.getItemInSecondHand() == null) {
-
-                            // Set shield in offhand when interacting with main hand
-                            Item shield = new DataItem(442, (byte) 1, (short) 0, null);
-                            tracker.setSecondHand(shield);
+                    if (isSword) {
+                        if (!tracker.isBlocking()) {
+                            tracker.setBlocking(true);
+                            if (!showShieldWhenSwordInHand && tracker.getItemInSecondHand() == null) {
+                                tracker.setSecondHand(new DataItem(442, (byte) 1, (short) 0, null));
+                            }
                         }
+                        boolean blockUsingMainHand = Via.getConfig().isNoDelayShieldBlocking()
+                            && !showShieldWhenSwordInHand;
+                        if (blockUsingMainHand && hand == 1 || !blockUsingMainHand && hand == 0) {
+                            wrapper.cancel();
+                            return;
+                        }
+                    } else {
+                        if (!showShieldWhenSwordInHand) tracker.setSecondHand(null);
+                        tracker.setBlocking(false);
                     }
-
-                    // Use the main hand to trigger the blocking
-                    boolean blockUsingMainHand = Via.getConfig().isNoDelayShieldBlocking()
-                        && !showShieldWhenSwordInHand;
-
-                    if (blockUsingMainHand && hand == 1 || !blockUsingMainHand && hand == 0) {
-                        wrapper.cancel();
-                    }
-                } else {
-                    if (!showShieldWhenSwordInHand) {
-                        // Remove the shield from the offhand
-                        tracker.setSecondHand(null);
-                    }
-                    tracker.setBlocking(false);
                 }
             }
-            wrapper.write(Types.ITEM1_8, item);
 
+            wrapper.write(Types.ITEM1_8, item);
             wrapper.write(Types.UNSIGNED_BYTE, (short) 0);
             wrapper.write(Types.UNSIGNED_BYTE, (short) 0);
             wrapper.write(Types.UNSIGNED_BYTE, (short) 0);
@@ -374,30 +348,41 @@ public class WorldPacketRewriter1_9 {
                 map(Types.VAR_INT, Types.UNSIGNED_BYTE); // 1 - Block Face
                 handler(wrapper -> {
                     final int hand = wrapper.read(Types.VAR_INT); // 2 - Hand
-                    if (hand != 0) wrapper.cancel();
-                });
-                handler(wrapper -> {
-                    Item item = Via.getManager().getProviders().get(HandItemProvider.class).getHandItem(wrapper.user());
+
+                    final Item item;
+                    if (hand == 0) {
+                        item = Via.getManager().getProviders()
+                            .get(HandItemProvider.class).getHandItem(wrapper.user());
+                    } else {
+                        // Off-hand
+                        OffHandItemProvider offHandProvider = Via.getManager().getProviders().get(OffHandItemProvider.class);
+                        item = offHandProvider.getOffHandItem(wrapper.user());
+                        if (item == null) {
+                            wrapper.cancel();
+                            return;
+                        }
+                        // Pre : met l'item off-hand en main principale sur le thread Bukkit
+                        // Le paquet part ensuite, le serveur voit le bon item en main
+                        Via.getPlatform().runSync(() -> offHandProvider.prePlacement(wrapper.user()));
+                        // Post : restore la main principale au tick suivant
+                        Via.getPlatform().runSync(() -> offHandProvider.postPlacement(wrapper.user()));
+                    }
+
                     wrapper.write(Types.ITEM1_8, item); // 3 - Item
                 });
                 map(Types.UNSIGNED_BYTE); // 4 - X
                 map(Types.UNSIGNED_BYTE); // 5 - Y
                 map(Types.UNSIGNED_BYTE); // 6 - Z
 
-                // Handle CommandBlocks
                 handler(wrapper -> {
                     CommandBlockProvider provider = Via.getManager().getProviders().get(CommandBlockProvider.class);
-
                     BlockPosition pos = wrapper.get(Types.BLOCK_POSITION1_8, 0);
                     Optional<CompoundTag> tag = provider.get(wrapper.user(), pos);
-                    // Send the Update Block Entity packet if present
                     if (tag.isPresent()) {
                         PacketWrapper updateBlockEntity = PacketWrapper.create(ClientboundPackets1_9.BLOCK_ENTITY_DATA, null, wrapper.user());
-
                         updateBlockEntity.write(Types.BLOCK_POSITION1_8, pos);
                         updateBlockEntity.write(Types.UNSIGNED_BYTE, (short) 2);
                         updateBlockEntity.write(Types.NAMED_COMPOUND_TAG, tag.get());
-
                         updateBlockEntity.scheduleSend(Protocol1_8To1_9.class);
                     }
                 });
@@ -407,8 +392,7 @@ public class WorldPacketRewriter1_9 {
                 }
                 handler(wrapper -> {
                     int face = wrapper.get(Types.UNSIGNED_BYTE, 0);
-                    if (face == 255)
-                        return;
+                    if (face == 255) return;
                     BlockPosition p = wrapper.get(Types.BLOCK_POSITION1_8, 0);
                     int x = p.x();
                     int y = p.y();
@@ -427,5 +411,4 @@ public class WorldPacketRewriter1_9 {
             }
         });
     }
-
 }
